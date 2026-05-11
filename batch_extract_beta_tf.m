@@ -1,34 +1,39 @@
-function batch_extract_beta_tf(input_dir, output_dir, fs, freq_range, epoch_window, min_event_interval, morlet_cycles)
+function batch_extract_beta_tf(input_dir, output_dir, fs, freq_range, epoch_window, min_event_interval, morlet_cycles, sprint_opt)
 % BATCH_EXTRACT_BETA_TF Batch process beta-band TF extraction across subjects
 %
 % Iterates over subject folders in the input directory, loads MEG task data,
-% extracts trial-averaged beta-band time-frequency representations, and
-% saves the results to the output directory.
+% extracts trial-averaged beta-band time-frequency representations and
+% aperiodic spectral components (via SPRiNT), and saves the results to the
+% output directory.
 %
 % Usage:
 %   batch_extract_beta_tf(input_dir, output_dir)
-%   batch_extract_beta_tf(input_dir, output_dir, fs, freq_range, epoch_window, min_event_interval, morlet_cycles)
+%   batch_extract_beta_tf(input_dir, output_dir, fs, freq_range, epoch_window, min_event_interval, morlet_cycles, sprint_opt)
 %
 % Inputs:
 %   input_dir           - Path to the parent directory containing subject
 %                         folders. Each subject folder should contain
 %                         'meg_task/data_block001.mat' with variable F.
 %   output_dir          - Path to save output .mat files. Each file is named
-%                         after the subject folder and contains the variable
-%                         'res' (trial-averaged TF map).
+%                         after the subject folder.
 %   fs                  - (Optional) Sampling rate in Hz. Default: 1000.
 %   freq_range          - (Optional) Frequency range in Hz. Default: 13:30.
-%   epoch_window        - (Optional) [pre post] in seconds. Default: [1.479 1.48].
+%   epoch_window        - (Optional) [start end] epoch time window in seconds
+%                         relative to event onset. Default: [-1.479 1.48].
 %   min_event_interval  - (Optional) Min interval between events in samples.
 %                         Default: 3000.
 %   morlet_cycles       - (Optional) Morlet wavelet cycles. Default: 3.
+%   sprint_opt          - (Optional) Struct of SPRiNT options. See
+%                         extract_beta_tf.m for details and defaults.
 %
 % Outputs:
 %   Saves one .mat file per subject in output_dir, containing:
-%     res  - [channels x timepoints] trial-averaged TF representation.
+%     res     - [channels x timepoints] trial-averaged TF representation.
+%     ap_avg  - [channels x time_windows] trial-averaged aperiodic model.
 %
 % Dependencies:
-%   extract_beta_tf.m, detect_task_events.m, morlet_transform.m
+%   extract_beta_tf.m, detect_task_events.m, morlet_transform.m (Brainstorm),
+%   SPRiNT (https://github.com/lucwilson/SPRiNT)
 %
 % Example:
 %   batch_extract_beta_tf('/data/MEG_study/subjects/', '/data/MEG_study/results/');
@@ -38,9 +43,10 @@ function batch_extract_beta_tf(input_dir, output_dir, fs, freq_range, epoch_wind
     % --- Default parameters ---
     if nargin < 3 || isempty(fs),                  fs = 1000;              end
     if nargin < 4 || isempty(freq_range),           freq_range = 13:30;     end
-    if nargin < 5 || isempty(epoch_window),         epoch_window = [1.479, 1.48]; end
+    if nargin < 5 || isempty(epoch_window),         epoch_window = [-1.479, 1.48]; end
     if nargin < 6 || isempty(min_event_interval),   min_event_interval = 3000;    end
     if nargin < 7 || isempty(morlet_cycles),         morlet_cycles = 3;     end
+    if nargin < 8 || isempty(sprint_opt),           sprint_opt = struct();  end
 
     % --- Create output directory if it does not exist ---
     if ~exist(output_dir, 'dir')
@@ -75,9 +81,9 @@ function batch_extract_beta_tf(input_dir, output_dir, fs, freq_range, epoch_wind
             continue;
         end
 
-        % Extract beta TF
-        [res, event_onsets] = extract_beta_tf(loaded.F, fs, freq_range, ...
-            epoch_window, min_event_interval, morlet_cycles);
+        % Extract beta TF and aperiodic component
+        [res, ap_avg, event_onsets] = extract_beta_tf(loaded.F, fs, freq_range, ...
+            epoch_window, min_event_interval, morlet_cycles, sprint_opt);
 
         if isempty(res)
             warning('No valid result for %s. Skipping save.', subject_name);
@@ -86,11 +92,11 @@ function batch_extract_beta_tf(input_dir, output_dir, fs, freq_range, epoch_wind
 
         % Save result
         output_path = fullfile(output_dir, [subject_name '.mat']);
-        save(output_path, 'res');
+        save(output_path, 'res', 'ap_avg');
         fprintf('Saved: %s\n', output_path);
 
         % Clear per-subject variables
-        clear res event_onsets loaded;
+        clear res ap_avg event_onsets loaded;
     end
 
     fprintf('\n=== Batch processing complete. ===\n');
