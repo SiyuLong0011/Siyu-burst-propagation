@@ -73,7 +73,7 @@ function event_onsets = detect_task_events(data, min_interval, min_event_count)
     n = 1;
     for k = 2:length(trigger)
         if trigger(k - 1) ~= threshold && trigger(k) == threshold
-            raw_onsets(n) = k; 
+            raw_onsets(n) = k; %#ok<AGROW>
             n = n + 1;
         end
     end
@@ -90,7 +90,7 @@ function event_onsets = detect_task_events(data, min_interval, min_event_count)
     event_onsets = raw_onsets(1);
     for k = 2:length(raw_onsets)
         if raw_onsets(k) - event_onsets(end) >= min_interval
-            event_onsets = [event_onsets, raw_onsets(k)]; 
+            event_onsets = [event_onsets, raw_onsets(k)]; %#ok<AGROW>
         end
     end
 
