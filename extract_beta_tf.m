@@ -20,8 +20,9 @@ function [tf_avg, ap_avg, event_onsets] = extract_beta_tf(data, fs, freq_range, 
 %   fs                  - Sampling rate in Hz (e.g., 1000).
 %   freq_range          - (Optional) Frequency range for TF decomposition in Hz.
 %                         Default: 13:30 (beta band).
-%   epoch_window        - (Optional) [pre post] epoch window in seconds
-%                         relative to event onset. Default: [1.479 1.48].
+%   epoch_window        - (Optional) [start end] epoch time window in
+%                         seconds relative to event onset.
+%                         Default: [-1.479 1.48].
 %   min_event_interval  - (Optional) Minimum interval between events in
 %                         samples to avoid duplicates. Default: 3000.
 %   morlet_cycles       - (Optional) Number of cycles for Morlet wavelet.
@@ -77,7 +78,7 @@ function [tf_avg, ap_avg, event_onsets] = extract_beta_tf(data, fs, freq_range, 
         freq_range = 13:30;
     end
     if nargin < 4 || isempty(epoch_window)
-        epoch_window = [1.479, 1.48];  % seconds before and after event
+        epoch_window = [-1.479, 1.48];  % [start end] in seconds relative to event onset
     end
     if nargin < 5 || isempty(min_event_interval)
         min_event_interval = 3000;  % samples
@@ -110,14 +111,13 @@ function [tf_avg, ap_avg, event_onsets] = extract_beta_tf(data, fs, freq_range, 
     end
 
     % --- Compute epoch time vector ---
-    pre_samples = round(epoch_window(1) * fs);
-    post_samples = round(epoch_window(2) * fs);
-    t = -epoch_window(1):(1/fs):epoch_window(2);
+    pre_samples = round(abs(epoch_window(1)) * fs);  % e.g., 1.479 * 1000 = 1479
+    post_samples = round(epoch_window(2) * fs);       % e.g., 1.48  * 1000 = 1480
+    t = epoch_window(1):(1/fs):epoch_window(2);       % e.g., -1.479:0.001:1.48
 
     % --- Accumulate TF and aperiodic components across trials ---
-    epoch_length = pre_samples + post_samples + 1;
-    tf_sum = zeros(n_data_channels, epoch_length);
-    ap_sum = [];  % initialized on first valid trial (size depends on SPRiNT output)
+    tf_sum = [];   % initialized on first valid trial (size depends on morlet_transform output)
+    ap_sum = [];   % initialized on first valid trial (size depends on SPRiNT output)
     n_valid_trials = 0;
 
     for k = 1:(length(event_onsets) - 1)
@@ -134,6 +134,10 @@ function [tf_avg, ap_avg, event_onsets] = extract_beta_tf(data, fs, freq_range, 
         % --- Morlet wavelet time-frequency decomposition ---
         tf = morlet_transform(epoch, t, freq_range, 1, morlet_cycles, 'y');
         tf = mean(tf, 3);  % average across frequencies
+
+        if isempty(tf_sum)
+            tf_sum = zeros(size(tf));
+        end
         tf_sum = tf_sum + tf;
 
         % --- SPRiNT aperiodic component ---
