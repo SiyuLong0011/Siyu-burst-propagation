@@ -46,12 +46,13 @@ function results = batch_beta_burst_pipeline(input_dir, output_dir, params)
 %
 % Outputs:
 %   results     - Struct with fields:
-%       .ann1           - [channels x subjects] pre-event burst onsets (ms).
-%       .ann2           - [channels x subjects] post-event burst onsets (ms).
-%       .sorted_pre     - [channels x subjects] sorted pre-event onsets.
-%       .sorted_post    - [channels x subjects] sorted post-event onsets.
+%       .ann1           - [channels x valid_subjects] pre-event burst onsets (ms).
+%       .ann2           - [channels x valid_subjects] post-event burst onsets (ms).
+%       .sorted_pre     - [channels x valid_subjects] sorted pre-event onsets.
+%       .sorted_post    - [channels x valid_subjects] sorted post-event onsets.
 %       .pca_results    - PCA output struct (see burst_onset_pca).
-%       .subject_names  - {1 x subjects} cell array of subject folder names.
+%       .subject_names  - {1 x valid_subjects} cell array of processed subject names.
+%       .skipped        - {1 x N} cell array of skipped subject names.
 %
 % Dependencies:
 %   extract_beta_tf.m, detect_task_events.m, detect_beta_bursts.m,
@@ -115,9 +116,11 @@ function results = batch_beta_burst_pipeline(input_dir, output_dir, params)
     fprintf('  %d subjects found\n', n_subjects);
     fprintf('========================================\n');
 
-    subject_names = {file_list.name};
-    ann1 = [];
-    ann2 = [];
+    % --- Track valid and skipped subjects ---
+    valid_names = {};
+    skipped_names = {};
+    ann1_list = {};
+    ann2_list = {};
 
     % --- Process each subject ---
     for i = 1:n_subjects
@@ -129,6 +132,7 @@ function results = batch_beta_burst_pipeline(input_dir, output_dir, params)
         % Check if data file exists
         if ~isfile(data_path)
             warning('Data file not found for %s. Skipping.', subject_name);
+            skipped_names{end + 1} = subject_name; %#ok<AGROW>
             continue;
         end
 
@@ -137,6 +141,7 @@ function results = batch_beta_burst_pipeline(input_dir, output_dir, params)
         loaded = load(data_path, 'F');
         if ~isfield(loaded, 'F')
             warning('Variable F not found in %s. Skipping.', data_path);
+            skipped_names{end + 1} = subject_name; %#ok<AGROW>
             continue;
         end
 
@@ -146,6 +151,7 @@ function results = batch_beta_burst_pipeline(input_dir, output_dir, params)
 
         if isempty(res)
             warning('No valid TF result for %s. Skipping.', subject_name);
+            skipped_names{end + 1} = subject_name; %#ok<AGROW>
             continue;
         end
 
@@ -167,22 +173,33 @@ function results = batch_beta_burst_pipeline(input_dir, output_dir, params)
 
         save(fullfile(onset_dir, [subject_name '.mat']), 'onset_pre', 'onset_post');
 
-        % Accumulate across subjects
-        if isempty(ann1)
-            n_channels = size(beta_burst, 1);
-            ann1 = zeros(n_channels, n_subjects);
-            ann2 = zeros(n_channels, n_subjects);
-        end
-        ann1(:, i) = onset_pre;
-        ann2(:, i) = onset_post;
+        % Accumulate valid subjects
+        valid_names{end + 1} = subject_name; %#ok<AGROW>
+        ann1_list{end + 1} = onset_pre; %#ok<AGROW>
+        ann2_list{end + 1} = onset_post; %#ok<AGROW>
 
         clear beta_burst onset_pre onset_post;
     end
 
+    % --- Assemble onset matrices from valid subjects only ---
+    n_valid = length(valid_names);
+    if n_valid == 0
+        error('No valid subjects processed. Cannot proceed to PCA.');
+    end
+
+    n_channels = length(ann1_list{1});
+    ann1 = zeros(n_channels, n_valid);
+    ann2 = zeros(n_channels, n_valid);
+    for i = 1:n_valid
+        ann1(:, i) = ann1_list{i};
+        ann2(:, i) = ann2_list{i};
+    end
+
     % --- Step 4: Group-level PCA ---
-    fprintf('\n=== Step 4: Group-level PCA ===\n');
+    fprintf('\n=== Step 4: Group-level PCA (%d valid subjects) ===\n', n_valid);
     [sorted_pre, sorted_post, pca_results] = burst_onset_pca(ann1, ann2, params.n_components);
 
+    subject_names = valid_names;
     save(fullfile(pca_dir, 'group_pca_results.mat'), ...
         'ann1', 'ann2', 'sorted_pre', 'sorted_post', 'pca_results', 'subject_names');
 
@@ -192,10 +209,13 @@ function results = batch_beta_burst_pipeline(input_dir, output_dir, params)
     results.sorted_pre = sorted_pre;
     results.sorted_post = sorted_post;
     results.pca_results = pca_results;
-    results.subject_names = subject_names;
+    results.subject_names = valid_names;
+    results.skipped = skipped_names;
 
     fprintf('\n========================================\n');
     fprintf('  Pipeline complete.\n');
+    fprintf('  Processed: %d subjects\n', n_valid);
+    fprintf('  Skipped:   %d subjects\n', length(skipped_names));
     fprintf('  Results saved to: %s\n', output_dir);
     fprintf('========================================\n');
 end
