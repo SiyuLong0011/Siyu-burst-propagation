@@ -56,9 +56,12 @@ function beta_burst = detect_beta_bursts(tf_avg, ap_avg, percentile_thresh, min_
     half_point = floor(n_timepoints / 2);
 
     % --- Subtract aperiodic component ---
+    % Use repmat for compatibility with older MATLAB versions
     tf_corrected = zeros(n_channels, n_timepoints);
-    tf_corrected(:, 1:half_point) = tf_avg(:, 1:half_point) - ap_avg(:, 1);
-    tf_corrected(:, (half_point + 1):end) = tf_avg(:, (half_point + 1):end) - ap_avg(:, 2);
+    tf_corrected(:, 1:half_point) = tf_avg(:, 1:half_point) - ...
+        repmat(ap_avg(:, 1), 1, half_point);
+    tf_corrected(:, (half_point + 1):end) = tf_avg(:, (half_point + 1):end) - ...
+        repmat(ap_avg(:, 2), 1, n_timepoints - half_point);
 
     % --- Preallocate output ---
     beta_burst = zeros(n_channels, n_timepoints);
