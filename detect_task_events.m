@@ -52,19 +52,27 @@ function event_onsets = detect_task_events(data, min_interval, min_event_count)
     trigger = abs(data(end - 14, :));
 
     % --- Determine threshold automatically ---
-    % Find the top 3 unique values by magnitude
+    % Find the top unique values by magnitude (up to 3)
     unique_vals = unique(trigger);
-    top3 = maxk(unique_vals, 3);
+    n_top = min(3, length(unique_vals));
 
-    % Count occurrences of each top value
-    counts = zeros(1, 3);
-    for j = 1:3
-        counts(j) = sum(trigger == top3(j));
+    if n_top == 0
+        warning('Trigger channel is empty. Returning empty.');
+        event_onsets = [];
+        return;
     end
 
-    % Use the most frequent among the top 3 as the event threshold
+    top_vals = maxk(unique_vals, n_top);
+
+    % Count occurrences of each top value
+    counts = zeros(1, n_top);
+    for j = 1:n_top
+        counts(j) = sum(trigger == top_vals(j));
+    end
+
+    % Use the most frequent among the top values as the event threshold
     [~, idx] = max(counts);
-    threshold = top3(idx);
+    threshold = top_vals(idx);
 
     % --- Detect rising edges ---
     % A rising edge is defined as a transition from a non-threshold value
